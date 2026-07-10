@@ -1,320 +1,251 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SVAKOM BLE 中继</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, sans-serif; background: #0f0f1a; color: #e0e0e0;
-         display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-  .card { background: #1a1a2e; border-radius: 20px; padding: 24px; width: 100%; max-width: 400px;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-  h1 { font-size: 1.4em; text-align: center; margin-bottom: 20px; color: #c084fc; }
-  label { font-size: 0.85em; color: #aaa; margin-bottom: 4px; display: block; margin-top: 12px; }
-  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #16213e;
-          color: #fff; font-size: 0.95em; }
-  button { width: 100%; padding: 14px; border-radius: 14px; border: none; font-size: 1em; font-weight: bold;
-           cursor: pointer; margin-top: 16px; transition: 0.2s; }
-  .btn-connect { background: #7c3aed; color: #fff; }
-  .btn-connect:disabled { background: #444; color: #888; cursor: not-allowed; }
-  .btn-stop { background: #e11d48; color: #fff; }
-  .status { margin-top: 16px; padding: 12px; border-radius: 10px; font-size: 0.9em; text-align: center; }
-  .status.ok { background: #065f46; color: #6ee7b7; }
-  .status.err { background: #7f1d1d; color: #fca5a5; }
-  .status.info { background: #1e3a5f; color: #93c5fd; }
-  .log { margin-top: 12px; font-size: 0.75em; color: #666; max-height: 120px; overflow-y: auto; }
-  .log div { padding: 2px 0; }
-  hr { border: none; border-top: 1px solid #333; margin: 16px 0; }
-  small { color: #666; display: block; text-align: center; margin-top: 12px; font-size: 0.7em; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧸 蓝牙中继</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 400px;
+            margin: 40px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        button {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            font-size: 18px;
+            border-radius: 12px;
+            width: 100%;
+            cursor: pointer;
+        }
+        button:disabled {
+            background: #c4b5fd;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .ok { background: #d1fae5; color: #065f46; }
+        .err { background: #fee2e2; color: #991b1b; }
+        .info { background: #e0e7ff; color: #3730a3; }
+        label {
+            display: block;
+            text-align: left;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #374151;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 4px 0 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+    </style>
 </head>
 <body>
-<div class="card">
-  <h1>🧸 SVAKOM BLE 中继</h1>
+    <h1>🧸 蓝牙中继</h1>
+    
+    <label>🌐 中继地址</label>
+    <input type="text" id="serverUrl" value="https://svakom-ble-ai-1.onrender.com" placeholder="https://你的服务器.onrender.com">
+    
+    <label>🔑 密钥</label>
+    <input type="text" id="serverSecret" value="200262zll" placeholder="你设的 BRIDGE_SECRET">
+    
+    <div id="statusBox" class="status info">
+        ⏳ 等待连接蓝牙玩具…
+    </div>
+    
+    <button id="connectBtn">🔍 扫描并连接玩具</button>
+    
+    <div style="margin-top: 16px; font-size: 12px; color: #6b7280;">
+        💡 提示：玩具需处于配对模式（灯快闪）<br>
+        部分安卓手机需授予 Chrome「位置」权限
+    </div>
 
-  <label>🌐 中继服务器地址</label>
-  <input type="text" id="serverUrl" placeholder="https://svakom-ble-ai-1.onrender.com" value="https://svakom-ble-ai-1.onrender.com">
+    <script>
+        const statusBox = document.getElementById('statusBox');
+        const connectBtn = document.getElementById('connectBtn');
+        const serverUrlInput = document.getElementById('serverUrl');
+        const serverSecretInput = document.getElementById('serverSecret');
 
-  <label>🔐 密钥 (BRIDGE_SECRET)</label>
-  <input type="password" id="secret" placeholder="你在Render设的密码">
+        let device = null;
+        let characteristic = null;
+        let currentCommand = null; // 当前正在执行的指令
+        let keepAliveTimer = null;
+        let pollTimer = null;
+        let wakeLock = null;
 
-  <button class="btn-connect" id="btnConnect" onclick="connect()">🔌 连接玩具</button>
-  <button class="btn-stop" id="btnStop" onclick="disconnect()" style="display:none;">⏹️ 断开连接</button>
+        function setStatus(msg, type) {
+            statusBox.textContent = msg;
+            statusBox.className = 'status ' + type;
+        }
 
-  <div id="statusBox" class="status info">⚙️ 请填写地址和密钥，然后点击连接</div>
+        // 请求屏幕常亮
+        async function requestWakeLock() {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('🔒 屏幕唤醒锁已激活');
+            } catch (e) {
+                console.warn('⚠️ 唤醒锁失败（不影响功能）:', e);
+            }
+        }
 
-  <div class="log" id="logBox"></div>
+        // 构建蓝牙命令
+        function buildCommand(cmd) {
+            if (cmd.type === 'speed') {
+                const v = cmd.value || 0;
+                return new Uint8Array([0x55, 0x04, 0x00, 0x00, v, v, 0xAA]);
+            } else if (cmd.type === 'pattern') {
+                const mode = cmd.mode || 1;
+                const level = Math.round((cmd.level || 1) * 5);
+                return new Uint8Array([0x55, 0x03, 0x00, 0x00, mode, level, 0x00]);
+            } else if (cmd.type === 'stop') {
+                return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x00, 0x00, 0xAA]);
+            }
+            return null;
+        }
 
-  <hr>
-  <small>⚠️ 请保持屏幕常亮 · 手机放在玩具旁边（< 1m）· 不要切换App</small>
-  <small>🟣 FFE1 控制通道 | ⛔ 避开 AE01 OTA 通道</small>
-</div>
+        // 发送字节到蓝牙
+        async function sendRaw(bytes) {
+            if (!characteristic) {
+                console.warn('⚠️ 特征未连接，跳过发送');
+                return;
+            }
+            try {
+                await characteristic.writeValueWithoutResponse(bytes);
+                console.log('📤 已发送:', Array.from(bytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+            } catch (e) {
+                console.error('❌ 发送失败:', e);
+            }
+        }
 
-<script>
-// ==================== 配置 ====================
-let serverUrl = '';
-let secret = '';
-let device = null;
-let server = null;
-let charWrite = null;       // FFE1 写入特征
-let currentCmd = null;      // 当前活动的蓝牙命令（用于续命）
-let keepaliveTimer = null;  // 续命定时器
-let pollTimer = null;       // 轮询定时器
-let wakeLock = null;        // 屏幕唤醒锁
+        // 执行单条指令
+        function executeCommand(cmd) {
+            currentCommand = cmd;
+            const bytes = buildCommand(cmd);
+            if (bytes) {
+                sendRaw(bytes);
+            }
+        }
 
-// ==================== 日志 ====================
-function log(msg, color = '#888') {
-  const box = document.getElementById('logBox');
-  const div = document.createElement('div');
-  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  div.style.color = color;
-  box.prepend(div);
-  if (box.children.length > 30) box.removeChild(box.lastChild);
-}
+        // 续命：每 1.5 秒重发当前指令
+        function startKeepAlive() {
+            stopKeepAlive();
+            keepAliveTimer = setInterval(() => {
+                if (currentCommand && characteristic) {
+                    const bytes = buildCommand(currentCommand);
+                    if (bytes) {
+                        console.log('🔄 续命发送…');
+                        sendRaw(bytes);
+                    }
+                }
+            }, 1500);
+        }
 
-// ==================== 状态显示 ====================
-function setStatus(text, type) {
-  const box = document.getElementById('statusBox');
-  box.textContent = text;
-  box.className = 'status ' + type;
-}
+        function stopKeepAlive() {
+            if (keepAliveTimer) {
+                clearInterval(keepAliveTimer);
+                keepAliveTimer = null;
+            }
+        }
 
-// ==================== 屏幕唤醒锁 ====================
-async function requestWakeLock() {
-  try {
-    if ('wakeLock' in navigator) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      log('✅ 屏幕唤醒锁已激活', '#6ee7b7');
-    }
-  } catch (e) {
-    log('⚠️ 无法激活唤醒锁，请手动保持屏幕常亮', '#fca5a5');
-  }
-}
+        // 轮询服务器取指令
+        async function pollServer() {
+            if (!characteristic) return;
+            const url = serverUrlInput.value.trim();
+            const secret = serverSecretInput.value.trim();
+            try {
+                const resp = await fetch(`${url}/toy-next?secret=${encodeURIComponent(secret)}`);
+                const data = await resp.json();
+                const cmds = data.commands || [];
+                if (cmds.length > 0) {
+                    console.log('📥 收到指令:', cmds);
+                    // 只执行最后一条
+                    const lastCmd = cmds[cmds.length - 1];
+                    executeCommand(lastCmd);
+                }
+            } catch (e) {
+                console.warn('⚠️ 轮询失败:', e.message);
+            }
+        }
 
-// ==================== 构建蓝牙命令 ====================
-// 文档格式：
-//   强度: [0x55, 0x04, 0x00, 0x00, 0x01, intensity(0-255), 0xAA]
-//   花样: [0x55, 0x03, 0x00, 0x00, mode(1-8), level(1-5), 0x00]
-//   停止: [0x55, 0x04, 0x00, 0x00, 0x00, 0x00, 0xAA]
-function buildCommand(cmd) {
-  if (!cmd) return null;
-  const type = cmd.type;
-  if (type === 'speed') {
-    const intensity = Math.max(0, Math.min(255, cmd.value || 0));
-    return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x01, intensity, 0xAA]);
-  } else if (type === 'pattern') {
-    const mode = Math.max(1, Math.min(8, cmd.mode || 1));
-    const level = Math.max(1, Math.min(5, cmd.level || 1));
-    return new Uint8Array([0x55, 0x03, 0x00, 0x00, mode, level, 0x00]);
-  } else if (type === 'stop') {
-    return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x00, 0x00, 0xAA]);
-  }
-  return null;
-}
+        function startPolling() {
+            stopPolling();
+            pollTimer = setInterval(pollServer, 300);
+        }
 
-// ==================== 发送蓝牙命令 ====================
-async function sendBluetooth(bytes) {
-  if (!charWrite || !device || !device.gatt.connected) {
-    log('❌ 设备未连接', '#fca5a5');
-    return false;
-  }
-  try {
-    await charWrite.writeValueWithoutResponse(bytes);
-    return true;
-  } catch (e) {
-    log('❌ 蓝牙写入失败: ' + e.message, '#fca5a5');
-    return false;
-  }
-}
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
 
-// ==================== 续命机制（每1.5秒重发当前命令） ====================
-function startKeepalive() {
-  stopKeepalive();
-  keepaliveTimer = setInterval(async () => {
-    if (currentCmd) {
-      const bytes = buildCommand(currentCmd);
-      if (bytes) {
-        const ok = await sendBluetooth(bytes);
-        if (!ok) log('⚠️ 续命发送失败', '#fca5a5');
-      }
-    }
-  }, 1500); // 1.5秒
-  log('🔄 续命机制已启动（每1.5秒）', '#93c5fd');
-}
+        // 连接蓝牙
+        async function connectBluetooth() {
+            try {
+                setStatus('🔍 正在扫描蓝牙设备…', 'info');
+                
+                // 关键：acceptAllDevices = true，显示所有设备
+                device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
+                });
 
-function stopKeepalive() {
-  if (keepaliveTimer) {
-    clearInterval(keepaliveTimer);
-    keepaliveTimer = null;
-    log('⏸️ 续命机制已暂停', '#888');
-  }
-}
+                setStatus('🔗 正在连接 ' + device.name + '…', 'info');
+                
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+                characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
 
-// ==================== 执行指令 ====================
-async function executeCommand(cmd) {
-  log(`📥 收到指令: ${JSON.stringify(cmd)}`, '#c084fc');
+                setStatus('✅ 已连接：' + device.name, 'ok');
+                connectBtn.textContent = '🔌 已连接，点击断开';
+                connectBtn.disabled = false;
+                connectBtn.onclick = disconnectBluetooth;
 
-  if (cmd.type === 'stop') {
-    currentCmd = null;
-    stopKeepalive();
-    await sendBluetooth(buildCommand(cmd));
-    setStatus('⏹️ 已停止', 'info');
-    return;
-  }
+                await requestWakeLock();
+                startPolling();
+                startKeepAlive();
 
-  // 更新当前活动指令并启动续命
-  currentCmd = cmd;
-  const bytes = buildCommand(cmd);
-  if (bytes) {
-    const ok = await sendBluetooth(bytes);
-    if (ok) {
-      setStatus(`✅ 活跃: ${JSON.stringify(cmd)}`, 'ok');
-      if (!keepaliveTimer) startKeepalive();
-    } else {
-      setStatus('⚠️ 发送失败，检查蓝牙连接', 'err');
-    }
-  }
-}
+            } catch (err) {
+                if (err.name === 'NotFoundError' || err.message.includes('cancelled')) {
+                    setStatus('❌ 未选择设备或未找到，请确保玩具处于配对模式（灯快闪）', 'err');
+                } else {
+                    setStatus('❌ 连接失败: ' + err.message, 'err');
+                }
+                connectBtn.disabled = false;
+            }
+        }
 
-// ==================== 轮询服务器获取指令 ====================
-async function pollServer() {
-  try {
-    const resp = await fetch(`${serverUrl}/toy-next?secret=${encodeURIComponent(secret)}`);
-    if (!resp.ok) {
-      log('⚠️ 服务器返回 ' + resp.status, '#fca5a5');
-      return;
-    }
-    const data = await resp.json();
-    const commands = data.commands || [];
-    for (const cmd of commands) {
-      await executeCommand(cmd);
-    }
-  } catch (e) {
-    // 网络波动静默处理，不刷日志
-  }
-}
+        // 断开蓝牙
+        async function disconnectBluetooth() {
+            stopPolling();
+            stopKeepAlive();
+            currentCommand = null;
+            if (device && device.gatt.connected) {
+                device.gatt.disconnect();
+            }
+            characteristic = null;
+            device = null;
+            setStatus('🔌 已断开连接', 'info');
+            connectBtn.textContent = '🔍 扫描并连接玩具';
+            connectBtn.onclick = connectBluetooth;
+            connectBtn.disabled = false;
+        }
 
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(pollServer, 300); // 每300ms
-  log('🔍 开始轮询服务器（每300ms）', '#93c5fd');
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
-// ==================== 连接蓝牙设备 ====================
-async function connect() {
-  serverUrl = document.getElementById('serverUrl').value.trim();
-  secret = document.getElementById('secret').value.trim();
-
-  if (!serverUrl || !secret) {
-    setStatus('⚠️ 请填写服务器地址和密钥', 'err');
-    return;
-  }
-
-  // 去掉末尾斜杠
-  if (serverUrl.endsWith('/')) serverUrl = serverUrl.slice(0, -1);
-
-  const btn = document.getElementById('btnConnect');
-  btn.disabled = true;
-  btn.textContent = '⏳ 扫描蓝牙设备...';
-  setStatus('🔍 正在搜索 SL278H...', 'info');
-  log('🔍 开始扫描蓝牙设备...', '#93c5fd');
-
-  try {
-    // 请求蓝牙设备（按名称过滤 SL278H）
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'SL278H' }],
-      optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb'] // FFE0 服务
-    });
-
-    log(`📱 已选择设备: ${device.name || '未知'}`, '#6ee7b7');
-    setStatus('🔗 正在连接...', 'info');
-
-    // 连接 GATT 服务器
-    const gatt = await device.gatt.connect();
-    log('✅ GATT 已连接', '#6ee7b7');
-
-    // 获取 FFE0 服务（控制通道）
-    const service = await gatt.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-    log('✅ FFE0 服务已获取', '#6ee7b7');
-
-    // 获取 FFE1 特征（write-without-response）
-    charWrite = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-    log('✅ FFE1 写入特征已就绪', '#6ee7b7');
-
-    // ⚠️ 验证：不碰 AE00/AE01（那是 OTA 通道，危险！）
-    log('⛔ 已避开 AE01 OTA 通道', '#fca5a5');
-
-    // 监听断开事件
-    device.addEventListener('gattserverdisconnected', () => {
-      log('🔌 蓝牙已断开！', '#fca5a5');
-      setStatus('🔌 蓝牙已断开，请重新连接', 'err');
-      stopPolling();
-      stopKeepalive();
-      currentCmd = null;
-      charWrite = null;
-      document.getElementById('btnConnect').style.display = 'block';
-      document.getElementById('btnStop').style.display = 'none';
-    });
-
-    // 请求屏幕唤醒锁
-    await requestWakeLock();
-
-    // 开始轮询
-    startPolling();
-
-    setStatus('✅ 就绪 | 等待指令...', 'ok');
-    log('🎉 一切就绪，等待服务器指令', '#6ee7b7');
-
-    document.getElementById('btnConnect').style.display = 'none';
-    document.getElementById('btnStop').style.display = 'block';
-
-  } catch (e) {
-    log('❌ 连接失败: ' + e.message, '#fca5a5');
-    setStatus('❌ 连接失败: ' + e.message, 'err');
-    btn.disabled = false;
-    btn.textContent = '🔌 连接玩具';
-  }
-}
-
-// ==================== 断开连接 ====================
-async function disconnect() {
-  stopPolling();
-  stopKeepalive();
-
-  // 发送停止命令
-  if (currentCmd) {
-    await sendBluetooth(buildCommand({ type: 'stop' }));
-    currentCmd = null;
-  }
-
-  if (device && device.gatt.connected) {
-    await device.gatt.disconnect();
-  }
-
-  // 释放唤醒锁
-  if (wakeLock) {
-    try { await wakeLock.release(); } catch (e) {}
-    wakeLock = null;
-  }
-
-  charWrite = null;
-  device = null;
-  setStatus('⏹️ 已断开', 'info');
-  log('⏹️ 已手动断开', '#888');
-
-  document.getElementById('btnConnect').style.display = 'block';
-  document.getElementById('btnStop').style.display = 'none';
-  document.getElementById('btnConnect').disabled = false;
-  document.getElementById('btnConnect').textContent = '🔌 连接玩具';
-}
-</script>
+        // 初始绑定
+        connectBtn.onclick = connectBluetooth;
+    </script>
 </body>
 </html>
