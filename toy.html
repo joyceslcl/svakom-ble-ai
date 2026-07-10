@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧸 蓝牙中继</title>
+    <title>🧸 ST462A 蓝牙中继</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -54,7 +55,7 @@
     </style>
 </head>
 <body>
-    <h1>🧸 蓝牙中继</h1>
+    <h1>🧸 ST462A 蓝牙中继</h1>
     
     <label>🌐 中继地址</label>
     <input type="text" id="serverUrl" value="https://svakom-ble-ai-1.onrender.com" placeholder="https://你的服务器.onrender.com">
@@ -81,7 +82,7 @@
 
         let device = null;
         let characteristic = null;
-        let currentCommand = null; // 当前正在执行的指令
+        let currentCommand = null;
         let keepAliveTimer = null;
         let pollTimer = null;
         let wakeLock = null;
@@ -91,7 +92,6 @@
             statusBox.className = 'status ' + type;
         }
 
-        // 请求屏幕常亮
         async function requestWakeLock() {
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
@@ -101,22 +101,37 @@
             }
         }
 
-        // 构建蓝牙命令
+        // 🎯 ST462A 专属命令构建器
         function buildCommand(cmd) {
+            // 映射：0.0-1.0 的强度值 → Y 字节（01–0A，即 0x01–0x0A）
+            function scaleY(val) {
+                if (!val || val <= 0) return 0x01;
+                if (val >= 1.0) return 0x0A;
+                return Math.max(1, Math.min(10, Math.round(val * 10)));
+            }
+
             if (cmd.type === 'speed') {
-                const v = cmd.value || 0;
-                return new Uint8Array([0x55, 0x04, 0x00, 0x00, v, v, 0xAA]);
-            } else if (cmd.type === 'pattern') {
-                const mode = cmd.mode || 1;
-                const level = Math.round((cmd.level || 1) * 5);
-                return new Uint8Array([0x55, 0x03, 0x00, 0x00, mode, level, 0x00]);
-            } else if (cmd.type === 'stop') {
-                return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x00, 0x00, 0xAA]);
+                // 震动：0x55 0x03 0x00 0x00 0x01 Y Y 0x00
+                const Y = scaleY(cmd.value);
+                return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, Y, Y, 0x00]);
+            } 
+            else if (cmd.type === 'constrict') {
+                // 吮吸：0x55 0x09 0x00 0x00 X 0x00 0x00 0x00
+                const X = Math.max(1, Math.min(3, Math.round(cmd.level || 1)));
+                return new Uint8Array([0x55, 0x09, 0x00, 0x00, X, 0x00, 0x00, 0x00]);
+            } 
+            else if (cmd.type === 'rotate') {
+                // 旋转：0x55 0x14 0x00 0x00 0x01 Y Y 0x00
+                const Y = scaleY(cmd.value);
+                return new Uint8Array([0x55, 0x14, 0x00, 0x00, 0x01, Y, Y, 0x00]);
+            } 
+            else if (cmd.type === 'stop') {
+                // 停止：发当前功能的零值命令（默认用震动停止）
+                return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
             }
             return null;
         }
 
-        // 发送字节到蓝牙
         async function sendRaw(bytes) {
             if (!characteristic) {
                 console.warn('⚠️ 特征未连接，跳过发送');
@@ -130,7 +145,6 @@
             }
         }
 
-        // 执行单条指令
         function executeCommand(cmd) {
             currentCommand = cmd;
             const bytes = buildCommand(cmd);
@@ -139,7 +153,6 @@
             }
         }
 
-        // 续命：每 1.5 秒重发当前指令
         function startKeepAlive() {
             stopKeepAlive();
             keepAliveTimer = setInterval(() => {
@@ -160,7 +173,6 @@
             }
         }
 
-        // 轮询服务器取指令
         async function pollServer() {
             if (!characteristic) return;
             const url = serverUrlInput.value.trim();
@@ -171,7 +183,6 @@
                 const cmds = data.commands || [];
                 if (cmds.length > 0) {
                     console.log('📥 收到指令:', cmds);
-                    // 只执行最后一条
                     const lastCmd = cmds[cmds.length - 1];
                     executeCommand(lastCmd);
                 }
@@ -192,12 +203,10 @@
             }
         }
 
-        // 连接蓝牙
         async function connectBluetooth() {
             try {
                 setStatus('🔍 正在扫描蓝牙设备…', 'info');
                 
-                // 关键：acceptAllDevices = true，显示所有设备
                 device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
@@ -228,7 +237,6 @@
             }
         }
 
-        // 断开蓝牙
         async function disconnectBluetooth() {
             stopPolling();
             stopKeepAlive();
@@ -244,7 +252,6 @@
             connectBtn.disabled = false;
         }
 
-        // 初始绑定
         connectBtn.onclick = connectBluetooth;
     </script>
 </body>
