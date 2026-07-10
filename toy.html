@@ -1,258 +1,278 @@
 <!DOCTYPE html>
-
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧸 ST462A 蓝牙中继</title>
+    <title>SVAKOM ST462A 蓝牙中继</title>
     <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0d;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .container {
+            background: #1a1a1a;
+            border-radius: 20px;
+            padding: 24px;
+            width: 100%;
             max-width: 400px;
-            margin: 40px auto;
-            padding: 20px;
-            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
         }
-        button {
-            background: #7c3aed;
-            color: white;
-            border: none;
-            padding: 16px 32px;
-            font-size: 18px;
+        h1 { text-align: center; font-size: 22px; margin-bottom: 4px; color: #ff6b9d; }
+        .subtitle { text-align: center; font-size: 12px; color: #888; margin-bottom: 20px; }
+        .status-bar {
+            background: #252525;
             border-radius: 12px;
-            width: 100%;
-            cursor: pointer;
-        }
-        button:disabled {
-            background: #c4b5fd;
-            cursor: not-allowed;
-        }
-        .status {
-            margin: 20px 0;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        .ok { background: #d1fae5; color: #065f46; }
-        .err { background: #fee2e2; color: #991b1b; }
-        .info { background: #e0e7ff; color: #3730a3; }
-        label {
-            display: block;
-            text-align: left;
-            margin-top: 12px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
             font-size: 13px;
-            color: #374151;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        input {
-            width: 100%;
-            padding: 10px;
-            margin: 4px 0 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            font-size: 14px;
-            box-sizing: border-box;
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #ff4444; flex-shrink: 0;
+        }
+        .status-dot.connected { background: #44ff44; }
+        .btn {
+            display: block; width: 100%; padding: 14px;
+            border: none; border-radius: 12px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            margin-bottom: 12px; transition: 0.2s;
+        }
+        .btn-scan { background: #7c3aed; color: #fff; }
+        .btn-stop { background: #ff4444; color: #fff; }
+        .btn:active { transform: scale(0.97); }
+        .control-group { margin-bottom: 16px; }
+        .control-label { font-size: 14px; color: #ccc; margin-bottom: 6px; display: flex; justify-content: space-between; }
+        .control-value { color: #ff6b9d; font-weight: bold; }
+        input[type=range] {
+            width: 100%; height: 8px; border-radius: 4px;
+            -webkit-appearance: none; background: #333; outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 28px; height: 28px;
+            border-radius: 50%; background: #ff6b9d; cursor: pointer;
+        }
+        select {
+            width: 100%; padding: 12px; border-radius: 10px;
+            background: #252525; color: #fff; border: 1px solid #444; font-size: 15px;
+        }
+        .log-box {
+            margin-top: 16px; background: #111; border-radius: 10px;
+            padding: 10px; max-height: 120px; overflow-y: auto;
+            font-size: 11px; color: #666; font-family: monospace;
         }
     </style>
 </head>
 <body>
-    <h1>🧸 ST462A 蓝牙中继</h1>
-    
-    <label>🌐 中继地址</label>
-    <input type="text" id="serverUrl" value="https://svakom-ble-ai-1.onrender.com" placeholder="https://你的服务器.onrender.com">
-    
-    <label>🔑 密钥</label>
-    <input type="text" id="serverSecret" value="200262zll" placeholder="你设的 BRIDGE_SECRET">
-    
-    <div id="statusBox" class="status info">
-        ⏳ 等待连接蓝牙玩具…
-    </div>
-    
-    <button id="connectBtn">🔍 扫描并连接玩具</button>
-    
-    <div style="margin-top: 16px; font-size: 12px; color: #6b7280;">
-        💡 提示：玩具需处于配对模式（灯快闪）<br>
-        部分安卓手机需授予 Chrome「位置」权限
+<div class="container">
+    <h1>🧸 ST462A 中继</h1>
+    <p class="subtitle">SVAKOM Klitty · 蓝牙 → Render</p>
+
+    <div class="status-bar" id="statusBar">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">未连接</span>
     </div>
 
-    <script>
-        const statusBox = document.getElementById('statusBox');
-        const connectBtn = document.getElementById('connectBtn');
-        const serverUrlInput = document.getElementById('serverUrl');
-        const serverSecretInput = document.getElementById('serverSecret');
+    <button class="btn btn-scan" id="scanBtn" onclick="scanAndConnect()">🔍 扫描并连接玩具</button>
 
-        let device = null;
-        let characteristic = null;
-        let currentCommand = null;
-        let keepAliveTimer = null;
-        let pollTimer = null;
-        let wakeLock = null;
+    <div class="control-group">
+        <div class="control-label"><span>💨 震动强度</span><span class="control-value" id="vibeLabel">0%</span></div>
+        <input type="range" id="vibeSlider" min="0" max="100" value="0" oninput="onVibeChange(this.value)">
+    </div>
 
-        function setStatus(msg, type) {
-            statusBox.textContent = msg;
-            statusBox.className = 'status ' + type;
+    <div class="control-group">
+        <div class="control-label"><span>🔒 吮吸档位</span><span class="control-value" id="suctLabel">关</span></div>
+        <select id="suctSelect" onchange="onSuctChange(this.value)">
+            <option value="0">关闭</option>
+            <option value="1">第 1 档</option>
+            <option value="2">第 2 档</option>
+            <option value="3">第 3 档</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <div class="control-label"><span>🔄 旋转速度</span><span class="control-value" id="rotLabel">0%</span></div>
+        <input type="range" id="rotSlider" min="0" max="100" value="0" oninput="onRotChange(this.value)">
+    </div>
+
+    <button class="btn btn-stop" onclick="stopAll()">⏹ 全部停止</button>
+
+    <div class="log-box" id="logBox">— 等待连接 —</div>
+</div>
+
+<script>
+    // ==================== 配置 ====================
+    const RELAY_URL = 'https://svakom-ble-ai-1.onrender.com';
+    const SECRET = '200262zll';
+    const SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+    const CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+
+    let device = null;
+    let char = null;
+    let currentState = { vibe: 0, suct: 0, rot: 0 };
+    let lastCmd = null;
+    let keepAliveTimer = null;
+    let pollTimer = null;
+
+    // ==================== UI 辅助 ====================
+    function log(msg) {
+        const box = document.getElementById('logBox');
+        const time = new Date().toLocaleTimeString();
+        box.textContent = '[' + time + '] ' + msg + '\n' + box.textContent;
+        box.textContent = box.textContent.split('\n').slice(0, 30).join('\n');
+    }
+    function setStatus(connected, text) {
+        const dot = document.getElementById('statusDot');
+        const txt = document.getElementById('statusText');
+        if (connected) { dot.classList.add('connected'); } else { dot.classList.remove('connected'); }
+        txt.textContent = text;
+    }
+
+    // ==================== 蓝牙 ====================
+    async function scanAndConnect() {
+        try {
+            log('正在扫描蓝牙设备...');
+            setStatus(false, '扫描中...');
+            device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [SERVICE_UUID]
+            });
+            log('已选择: ' + (device.name || '未知设备'));
+            setStatus(false, '连接中...');
+
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            char = await service.getCharacteristic(CHAR_UUID);
+
+            setStatus(true, '已连接: ' + (device.name || 'ST462A'));
+            log('✅ 蓝牙已连接！开始轮询中继...');
+
+            device.addEventListener('gattserverdisconnected', onDisconnect);
+            startKeepAlive();
+            startPolling();
+        } catch (err) {
+            log('❌ 连接失败: ' + err.message);
+            setStatus(false, '连接失败');
         }
+    }
+    function onDisconnect() {
+        log('⚠ 蓝牙断开');
+        setStatus(false, '已断开');
+        stopKeepAlive();
+        stopPolling();
+        char = null;
+        device = null;
+    }
 
-        async function requestWakeLock() {
-            try {
-                wakeLock = await navigator.wakeLock.request('screen');
-                console.log('🔒 屏幕唤醒锁已激活');
-            } catch (e) {
-                console.warn('⚠️ 唤醒锁失败（不影响功能）:', e);
+    // ==================== 命令构建（ST462A 协议） ====================
+    function buildVibeCommand(intensity) {
+        if (intensity <= 0) return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        const y = Math.max(1, Math.min(10, Math.floor(intensity)));
+        return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, y, y, 0x00]);
+    }
+    function buildSuctCommand(level) {
+        if (level <= 0) return new Uint8Array([0x55, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        const x = Math.max(1, Math.min(3, level));
+        return new Uint8Array([0x55, 0x09, 0x00, 0x00, x, 0x00, 0x00, 0x00]);
+    }
+    function buildRotCommand(speed) {
+        if (speed <= 0) return new Uint8Array([0x55, 0x14, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        const y = Math.max(1, Math.min(10, Math.floor(speed)));
+        return new Uint8Array([0x55, 0x14, 0x00, 0x00, 0x01, y, y, 0x00]);
+    }
+    function buildStopAll() {
+        return new Uint8Array([0x55, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    }
+
+    // ==================== 发送命令 ====================
+    async function sendCmd(cmdBytes) {
+        if (!char) {
+            log('⚠ 蓝牙未连接，命令进入队列');
+            await queueToRelay(cmdBytes);
+            return;
+        }
+        try {
+            await char.writeValue(cmdBytes);
+            lastCmd = cmdBytes;
+            log('📤 已发送: ' + Array.from(cmdBytes).map(b => b.toString(16).padStart(2,'0')).join(' '));
+        } catch (err) {
+            log('❌ 发送失败: ' + err.message);
+            await queueToRelay(cmdBytes);
+        }
+    }
+
+    // ==================== 中继队列 ====================
+    async function queueToRelay(cmdBytes) {
+        const hex = Array.from(cmdBytes).map(b => b.toString(16).padStart(2,'0')).join('');
+        try {
+            await fetch(RELAY_URL + '/api/queue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-secret': SECRET },
+                body: JSON.stringify({ command: hex })
+            });
+        } catch (e) { log('⚠ 队列写入失败'); }
+    }
+
+    async function pollRelay() {
+        try {
+            const resp = await fetch(RELAY_URL + '/api/queue?secret=' + SECRET);
+            const data = await resp.json();
+            if (data.command && char) {
+                const bytes = new Uint8Array(data.command.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+                await char.writeValue(bytes);
+                lastCmd = bytes;
             }
-        }
+        } catch (e) { /* 静默失败 */ }
+    }
+    function startPolling() { stopPolling(); pollTimer = setInterval(pollRelay, 300); }
+    function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
-        // 🎯 ST462A 专属命令构建器
-        function buildCommand(cmd) {
-            // 映射：0.0-1.0 的强度值 → Y 字节（01–0A，即 0x01–0x0A）
-            function scaleY(val) {
-                if (!val || val <= 0) return 0x01;
-                if (val >= 1.0) return 0x0A;
-                return Math.max(1, Math.min(10, Math.round(val * 10)));
-            }
+    // ==================== 续命心跳 ====================
+    function startKeepAlive() { stopKeepAlive(); keepAliveTimer = setInterval(() => { if (lastCmd && char) { char.writeValue(lastCmd).catch(() => {}); } }, 1500); }
+    function stopKeepAlive() { if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; } }
 
-            if (cmd.type === 'speed') {
-                // 震动：0x55 0x03 0x00 0x00 0x01 Y Y 0x00
-                const Y = scaleY(cmd.value);
-                return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, Y, Y, 0x00]);
-            } 
-            else if (cmd.type === 'constrict') {
-                // 吮吸：0x55 0x09 0x00 0x00 X 0x00 0x00 0x00
-                const X = Math.max(1, Math.min(3, Math.round(cmd.level || 1)));
-                return new Uint8Array([0x55, 0x09, 0x00, 0x00, X, 0x00, 0x00, 0x00]);
-            } 
-            else if (cmd.type === 'rotate') {
-                // 旋转：0x55 0x14 0x00 0x00 0x01 Y Y 0x00
-                const Y = scaleY(cmd.value);
-                return new Uint8Array([0x55, 0x14, 0x00, 0x00, 0x01, Y, Y, 0x00]);
-            } 
-            else if (cmd.type === 'stop') {
-                // 停止：发当前功能的零值命令（默认用震动停止）
-                return new Uint8Array([0x55, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
-            }
-            return null;
-        }
-
-        async function sendRaw(bytes) {
-            if (!characteristic) {
-                console.warn('⚠️ 特征未连接，跳过发送');
-                return;
-            }
-            try {
-                await characteristic.writeValueWithoutResponse(bytes);
-                console.log('📤 已发送:', Array.from(bytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
-            } catch (e) {
-                console.error('❌ 发送失败:', e);
-            }
-        }
-
-        function executeCommand(cmd) {
-            currentCommand = cmd;
-            const bytes = buildCommand(cmd);
-            if (bytes) {
-                sendRaw(bytes);
-            }
-        }
-
-        function startKeepAlive() {
-            stopKeepAlive();
-            keepAliveTimer = setInterval(() => {
-                if (currentCommand && characteristic) {
-                    const bytes = buildCommand(currentCommand);
-                    if (bytes) {
-                        console.log('🔄 续命发送…');
-                        sendRaw(bytes);
-                    }
-                }
-            }, 1500);
-        }
-
-        function stopKeepAlive() {
-            if (keepAliveTimer) {
-                clearInterval(keepAliveTimer);
-                keepAliveTimer = null;
-            }
-        }
-
-        async function pollServer() {
-            if (!characteristic) return;
-            const url = serverUrlInput.value.trim();
-            const secret = serverSecretInput.value.trim();
-            try {
-                const resp = await fetch(`${url}/toy-next?secret=${encodeURIComponent(secret)}`);
-                const data = await resp.json();
-                const cmds = data.commands || [];
-                if (cmds.length > 0) {
-                    console.log('📥 收到指令:', cmds);
-                    const lastCmd = cmds[cmds.length - 1];
-                    executeCommand(lastCmd);
-                }
-            } catch (e) {
-                console.warn('⚠️ 轮询失败:', e.message);
-            }
-        }
-
-        function startPolling() {
-            stopPolling();
-            pollTimer = setInterval(pollServer, 300);
-        }
-
-        function stopPolling() {
-            if (pollTimer) {
-                clearInterval(pollTimer);
-                pollTimer = null;
-            }
-        }
-
-        async function connectBluetooth() {
-            try {
-                setStatus('🔍 正在扫描蓝牙设备…', 'info');
-                
-                device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb']
-                });
-
-                setStatus('🔗 正在连接 ' + device.name + '…', 'info');
-                
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-                characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-
-                setStatus('✅ 已连接：' + device.name, 'ok');
-                connectBtn.textContent = '🔌 已连接，点击断开';
-                connectBtn.disabled = false;
-                connectBtn.onclick = disconnectBluetooth;
-
-                await requestWakeLock();
-                startPolling();
-                startKeepAlive();
-
-            } catch (err) {
-                if (err.name === 'NotFoundError' || err.message.includes('cancelled')) {
-                    setStatus('❌ 未选择设备或未找到，请确保玩具处于配对模式（灯快闪）', 'err');
-                } else {
-                    setStatus('❌ 连接失败: ' + err.message, 'err');
-                }
-                connectBtn.disabled = false;
-            }
-        }
-
-        async function disconnectBluetooth() {
-            stopPolling();
-            stopKeepAlive();
-            currentCommand = null;
-            if (device && device.gatt.connected) {
-                device.gatt.disconnect();
-            }
-            characteristic = null;
-            device = null;
-            setStatus('🔌 已断开连接', 'info');
-            connectBtn.textContent = '🔍 扫描并连接玩具';
-            connectBtn.onclick = connectBluetooth;
-            connectBtn.disabled = false;
-        }
-
-        connectBtn.onclick = connectBluetooth;
-    </script>
+    // ==================== UI 事件 ====================
+    function onVibeChange(val) {
+        const pct = parseInt(val) / 100;
+        currentState.vibe = pct;
+        document.getElementById('vibeLabel').textContent = Math.round(pct * 100) + '%';
+        const cmd = buildVibeCommand(Math.round(pct * 10));
+        sendCmd(cmd);
+    }
+    function onSuctChange(val) {
+        const level = parseInt(val);
+        currentState.suct = level;
+        const labels = ['关', '第 1 档', '第 2 档', '第 3 档'];
+        document.getElementById('suctLabel').textContent = labels[level];
+        const cmd = buildSuctCommand(level);
+        sendCmd(cmd);
+    }
+    function onRotChange(val) {
+        const pct = parseInt(val) / 100;
+        currentState.rot = pct;
+        document.getElementById('rotLabel').textContent = Math.round(pct * 100) + '%';
+        const cmd = buildRotCommand(Math.round(pct * 10));
+        sendCmd(cmd);
+    }
+    function stopAll() {
+        currentState = { vibe: 0, suct: 0, rot: 0 };
+        document.getElementById('vibeSlider').value = 0;
+        document.getElementById('vibeLabel').textContent = '0%';
+        document.getElementById('suctSelect').value = 0;
+        document.getElementById('suctLabel').textContent = '关';
+        document.getElementById('rotSlider').value = 0;
+        document.getElementById('rotLabel').textContent = '0%';
+        sendCmd(buildStopAll());
+    }
+</script>
 </body>
 </html>
