@@ -8,62 +8,68 @@ const PORT = process.env.PORT || 3000;
 
 let commandQueue = [];
 
-// ========== MCP 工具定义 ==========
+// ========== ST462A 工具定义 ==========
 const TOOLS = [
   {
     name: "toy_set_speed",
-    description: "Set toy intensity 0-100%",
+    description: "震动强度 0.0-1.0（0%到100%）",
     inputSchema: {
       type: "object",
-      properties: { speed: { type: "number", description: "Intensity 0.0-1.0" } },
+      properties: { speed: { type: "number", description: "强度 0.0-1.0" } },
       required: ["speed"]
     }
   },
   {
-    name: "toy_set_pattern",
-    description: "Set vibration pattern 1-8",
+    name: "toy_constrict",
+    description: "吮吸档位 1-3",
     inputSchema: {
       type: "object",
-      properties: {
-        pattern: { type: "number", description: "Pattern 1-8" },
-        level: { type: "number", description: "Level 0.0-1.0" }
-      },
-      required: ["pattern"]
+      properties: { level: { type: "number", description: "档位 1-3" } },
+      required: ["level"]
+    }
+  },
+  {
+    name: "toy_rotate",
+    description: "旋转速度 0.0-1.0（0%到100%）",
+    inputSchema: {
+      type: "object",
+      properties: { speed: { type: "number", description: "速度 0.0-1.0" } },
+      required: ["speed"]
     }
   },
   {
     name: "toy_stop",
-    description: "Stop immediately",
+    description: "立即停止所有功能",
     inputSchema: { type: "object", properties: {} }
   },
   {
     name: "toy_status",
-    description: "Check relay status",
+    description: "查看中继状态和队列",
     inputSchema: { type: "object", properties: {} }
   }
 ];
 
-// ========== 处理 MCP 工具调用 ==========
+// ========== ST462A 工具执行 ==========
 function handleToolCall(name, args) {
   if (name === "toy_set_speed") {
-    const speed = Math.round((args.speed || 0.5) * 255);
-    commandQueue.push({ type: "speed", value: speed });
-    return `✅ Speed set to ${Math.round((args.speed || 0.5) * 100)}%`;
-  } else if (name === "toy_set_pattern") {
-    const mode = args.pattern || 1;
-    const level = Math.round((args.level || 0.5) * 5);
-    commandQueue.push({ type: "pattern", mode, level });
-    return `✅ Pattern ${mode} at level ${level}`;
+    commandQueue.push({ type: "speed", value: args.speed || 0.5 });
+    return `✅ 震动已设为 ${Math.round((args.speed || 0.5) * 100)}%`;
+  } else if (name === "toy_constrict") {
+    commandQueue.push({ type: "constrict", level: args.level || 1 });
+    return `✅ 吮吸已设为第 ${args.level || 1} 档`;
+  } else if (name === "toy_rotate") {
+    commandQueue.push({ type: "rotate", value: args.speed || 0.5 });
+    return `✅ 旋转已设为 ${Math.round((args.speed || 0.5) * 100)}%`;
   } else if (name === "toy_stop") {
     commandQueue.push({ type: "stop" });
-    return "✅ Stopped";
+    return "✅ 已停止所有功能";
   } else if (name === "toy_status") {
-    return `🟢 Online | Queue: ${commandQueue.length}`;
+    return `🟢 在线 | 队列: ${commandQueue.length} 条 | 型号: ST462A (Klitty)`;
   }
-  return "❌ Unknown tool";
+  return "❌ 未知工具";
 }
 
-// ========== POST /mcp（HTTP JSON-RPC 模式，你的聊天前端用的） ==========
+// ========== POST /mcp（聊天前端专用） ==========
 app.post("/mcp", (req, res) => {
   const { secret } = req.query;
   if (secret !== SECRET) {
@@ -72,7 +78,6 @@ app.post("/mcp", (req, res) => {
 
   const { method, params, id } = req.body || {};
 
-  // initialize
   if (method === "initialize") {
     return res.json({
       jsonrpc: "2.0",
@@ -80,12 +85,11 @@ app.post("/mcp", (req, res) => {
       result: {
         protocolVersion: "0.1.0",
         capabilities: { tools: {} },
-        serverInfo: { name: "svakom-ble", version: "1.0.0" }
+        serverInfo: { name: "svakom-ble-st462a", version: "1.0.0" }
       }
     });
   }
 
-  // tools/list
   if (method === "tools/list") {
     return res.json({
       jsonrpc: "2.0",
@@ -94,7 +98,6 @@ app.post("/mcp", (req, res) => {
     });
   }
 
-  // tools/call
   if (method === "tools/call") {
     const { name, arguments: args } = params || {};
     const text = handleToolCall(name, args || {});
@@ -107,7 +110,6 @@ app.post("/mcp", (req, res) => {
     });
   }
 
-  // 未知方法
   return res.status(400).json({
     jsonrpc: "2.0",
     id,
@@ -115,7 +117,7 @@ app.post("/mcp", (req, res) => {
   });
 });
 
-// ========== GET /mcp（SSE 模式，备用） ==========
+// ========== GET /mcp（SSE 备用） ==========
 app.get("/mcp", (req, res) => {
   const { secret } = req.query;
   if (secret !== SECRET) {
@@ -133,7 +135,7 @@ app.get("/mcp", (req, res) => {
     params: {
       protocolVersion: "0.1.0",
       capabilities: { tools: {} },
-      serverInfo: { name: "svakom-ble", version: "1.0.0" }
+      serverInfo: { name: "svakom-ble-st462a", version: "1.0.0" }
     }
   })}\n\n`);
 
@@ -183,5 +185,5 @@ app.get("/toy-next", (req, res) => {
 
 // ========== 启动 ==========
 app.listen(PORT, () => {
-  console.log("svakom-bridge running on port " + PORT);
+  console.log("svakom-bridge (ST462A) running on port " + PORT);
 });
